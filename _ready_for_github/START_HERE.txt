@@ -1,0 +1,38 @@
+COLLECTRA v4 — START HERE
+
+1) Open this folder in VS Code.
+2) Open Terminal.
+3) Mac:
+   cp .env.example .env
+   python3 -m pip install -r requirements.txt
+   python3 server.py
+
+   Windows:
+   copy .env.example .env
+   python -m pip install -r requirements.txt
+   python server.py
+
+4) Open http://localhost:8000 on the computer.
+5) For phone testing, use the "Phone on same Wi-Fi" URL printed in Terminal.
+
+WHAT CHANGED IN v4
+- Verify Card requires FRONT + BACK + EDGES/CORNERS + SURFACE/LOGO/FOIL detail.
+- Packing evidence is VIDEO ONLY with a 5-step guide.
+- Unboxing evidence is VIDEO ONLY with a 5-step guide.
+- Guided recorder shows the current step and exactly what to show next.
+- 10 supplied photos are already loaded as real initial inventory with the requested prices/stock.
+- Service worker cache was bumped so older v3 files do not keep freezing/overriding the new app.
+
+ADMIN
+Profile > Admin
+Admin key: set COLLECTRA_ADMIN_KEY yourself. If you do not, a random key is printed in the terminal each time you start the server.
+Change it in .env before public use.
+
+
+FINAL VERSION NOTES
+- Sign-up email check: buyers and sellers get a 6-digit code (valid 30 min, 5 tries) AND a link by email. Either one confirms the email. This is what lets people recover their account later.
+- Seller approval: Profile > Admin > Seller Applications. View ID photos, compare the selfie to the ID, then Approve or Reject (with a reason). Sellers must confirm their email first.
+- Emails are sent automatically once you set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM (and COLLECTRA_PUBLIC_URL = your website address). Approval and rejection emails to sellers are already coded. Optional: ADMIN_NOTIFY_EMAIL gets a message for every new seller application.
+- Until email is set up: on your own computer the code/link is printed in the Terminal, and the admin page has "Create verification link" buttons.
+- The admin key locks for 15 minutes after 10 wrong tries.
+- AI: see AI_INTEGRATION.md.

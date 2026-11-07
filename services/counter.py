@@ -40,6 +40,7 @@ def _count_visit(h) -> None:
     if path not in PAGES:
         return
     ua = h.headers.get('User-Agent', '') or ''
+    print('[counter] page-open ua=%s dest=%s' % (ua[:90], h.headers.get('Sec-Fetch-Dest')), flush=True)
     if not ua or BOT.search(ua):
         print('[counter] skipped (bot/empty UA)', flush=True)
         return
@@ -75,7 +76,7 @@ def install(handler_cls) -> None:
     def do_GET(self):
         try:
             _count_visit(self)
-        except Exception:
-            pass
+        except Exception as e:
+            print('[counter] error:', repr(e)[:200], flush=True)
         return original(self)
     handler_cls.do_GET = do_GET

@@ -838,6 +838,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'error':'Unknown endpoint'},404)
         finally: con.close()
 
+# Usage counter (see services/counter.py): counts page opens, never affects the app if it fails.
+try:
+    from services import counter as _counter; _counter.install(Handler)
+except Exception:
+    traceback.print_exc()
+
 def get_lan_ip():
     try:
         s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(('8.8.8.8',80)); ip=s.getsockname()[0]; s.close(); return ip

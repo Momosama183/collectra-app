@@ -40,16 +40,13 @@ def _count_visit(h) -> None:
     if path not in PAGES:
         return
     ua = h.headers.get('User-Agent', '') or ''
-    print('[counter] page-open ua=%s dest=%s' % (ua[:90], h.headers.get('Sec-Fetch-Dest')), flush=True)
     if not ua or BOT.search(ua):
-        print('[counter] skipped (bot/empty UA)', flush=True)
         return
     if 'text/html' not in (h.headers.get('Accept', '') or ''):
-        print('[counter] skipped (not html)', flush=True)
         return
+    # 'empty' is how the app's own service worker re-fetches the page on every open, so it must count too.
     dest = h.headers.get('Sec-Fetch-Dest')
-    if dest and dest != 'document':
-        print('[counter] skipped (dest=%s)' % dest, flush=True)
+    if dest and dest not in ('document', 'empty'):
         return
     if re.search(r'prefetch|prerender', (h.headers.get('Sec-Purpose', '') or '') + (h.headers.get('Purpose', '') or ''), re.I):
         return

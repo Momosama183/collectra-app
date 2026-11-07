@@ -28,9 +28,11 @@ def _post(visitor: str, src: str) -> None:
         body = json.dumps({'kind': 'visit', 'visitor': visitor, 'src': src}).encode()
         req = urllib.request.Request(LOG_URL, data=body, method='POST',
                                      headers={'Content-Type': 'application/json', 'User-Agent': 'collectra-counter/1'})
-        urllib.request.urlopen(req, timeout=4).read()
-    except Exception:
-        pass   # a counter must never break the app
+        with urllib.request.urlopen(req, timeout=8) as r:
+            r.read()
+            print('[counter] logged', r.status, flush=True)
+    except Exception as e:
+        print('[counter] log failed:', repr(e)[:200], flush=True)   # a counter must never break the app
 
 
 def _count_visit(h) -> None:
@@ -39,11 +41,14 @@ def _count_visit(h) -> None:
         return
     ua = h.headers.get('User-Agent', '') or ''
     if not ua or BOT.search(ua):
+        print('[counter] skipped (bot/empty UA)', flush=True)
         return
     if 'text/html' not in (h.headers.get('Accept', '') or ''):
+        print('[counter] skipped (not html)', flush=True)
         return
     dest = h.headers.get('Sec-Fetch-Dest')
     if dest and dest != 'document':
+        print('[counter] skipped (dest=%s)' % dest, flush=True)
         return
     if re.search(r'prefetch|prerender', (h.headers.get('Sec-Purpose', '') or '') + (h.headers.get('Purpose', '') or ''), re.I):
         return

@@ -3,7 +3,7 @@ services:
   - type: web
     name: collectra-app
     runtime: python
-    plan: free            # free = data resets when the server sleeps/restarts. See below for permanent storage.
+    plan: starter         # paid plan: needed for the permanent disk below (free plan resets data on every restart)
     buildCommand: pip install -r requirements.txt
     startCommand: python server.py
     healthCheckPath: /
@@ -14,6 +14,8 @@ services:
         generateValue: true
       - key: COLLECTRA_SECRET
         generateValue: true
+      - key: COLLECTRA_DATA_DIR
+        value: /var/data
       - key: COLLECTRA_WEB_AI
         value: "on"
       - key: COLLECTRA_WEB_AI_URL
@@ -22,9 +24,7 @@ services:
         value: claude
       - key: COLLECTRA_AI_FALLBACKS
         value: openai
-    # --- For PERMANENT data (needs a paid plan, about $7/month): change plan to "starter", delete the "#" below ---
-    # disk:
-    #   name: collectra-data
-    #   mountPath: /var/data
-    #   sizeGB: 1
-    # and add this env var:  COLLECTRA_DATA_DIR = /var/data
+    disk:
+      name: collectra-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -212,6 +212,10 @@ def deliver_verification(con,kind,account_id,email,base):
     link=f"{base}/#verify-email/{new_verify_token(con,kind,account_id)}"; code=issue_code(con,kind,account_id)
     if smtp_configured(): threading.Thread(target=send_verify_email,args=(email,link,code),daemon=True).start()
     elif base.startswith(('http://localhost','http://127.0.0.1')): print(f'\n[Collectra] Email is not set up. Confirmation for {email}:\n  code: {code}\n  link: {link}\n')
+    elif os.getenv('COLLECTRA_AUTO_VERIFY','on').lower()!='off':
+        # Online with no mail server (small private test): nobody could ever receive the code, so confirm the email automatically.
+        # Set up SMTP_HOST and this stops by itself; set COLLECTRA_AUTO_VERIFY=off to force real confirmation.
+        con.execute(f"UPDATE {'buyers' if kind=='buyer' else 'sellers'} SET email_verified=1 WHERE id=?",(account_id,))
     return link
 
 def run_id_check(seller_id,challenge,name,nid):
@@ -516,7 +520,7 @@ class Handler(BaseHTTPRequestHandler):
                 cur=con.execute('INSERT INTO buyers(email,password_hash,password_salt,full_name,phone,created_at) VALUES(?,?,?,?,?,?)',(email,ph,salt,name,phone,now_iso()))
                 REG_LOG[ip]=recent+[time.time()]
                 tok=new_buyer_session(con,cur.lastrowid); deliver_verification(con,'buyer',cur.lastrowid,email,self.public_base()); con.commit()
-                return self.send_json({'ok':True,'session':tok,'buyer':{'email':email,'full_name':name,'phone':phone,'email_verified':False}})
+                return self.send_json({'ok':True,'session':tok,'buyer':{'email':email,'full_name':name,'phone':phone,'email_verified':bool(con.execute('SELECT email_verified FROM buyers WHERE id=?',(cur.lastrowid,)).fetchone()[0])}})
             if path=='/api/buyer/login':
                 d=self.read_json(); email=(d.get('email') or '').strip().lower(); pw=d.get('password') or ''
                 key='buyer:'+email+'|'+self.client_address[0]; rec=LOGIN_FAILS.get(key,[0,0])
@@ -602,6 +606,7 @@ class Handler(BaseHTTPRequestHandler):
                 deliver_verification(con,'seller',sid,email,self.public_base()); con.commit()
                 threading.Thread(target=run_id_check,args=(sid,chal,name,nid),daemon=True).start()
                 notify(os.getenv('ADMIN_NOTIFY_EMAIL',''),'New Collectra seller application',f'{name} ({email}) applied to sell as {shop}. Open the admin dashboard to review.')
+                if not smtp_configured(): return self.send_json({'ok':True,'message':"Account created. We will now review your ID. After approval you can log in."})
                 return self.send_json({'ok':True,'message':"Account created. First, open the confirmation link we just emailed to you. We only review ID applications from confirmed emails. After approval you can log in."})
             if path=='/api/seller/login':
                 d=self.read_json(); email=(d.get('email') or '').strip().lower(); pw=d.get('password') or ''

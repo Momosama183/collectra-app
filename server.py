@@ -606,6 +606,12 @@ class Handler(BaseHTTPRequestHandler):
                 deliver_verification(con,'seller',sid,email,self.public_base()); con.commit()
                 threading.Thread(target=run_id_check,args=(sid,chal,name,nid),daemon=True).start()
                 notify(os.getenv('ADMIN_NOTIFY_EMAIL',''),'New Collectra seller application',f'{name} ({email}) applied to sell as {shop}. Open the admin dashboard to review.')
+                if os.getenv('COLLECTRA_AUTO_APPROVE_SELLERS','off').lower()=='on':
+                    # Small private test: let sellers in right away. The ID photos are still saved for a later review, and the shop gets NO Verified badge.
+                    con.execute('INSERT INTO stores(name,description,logo_url,verified,category,token,created_at) VALUES(?,?,?,?,?,?,?)',(shop,'New Collectra seller','',0,'Mixed',secrets.token_urlsafe(24),now_iso()))
+                    store_id=con.execute('SELECT last_insert_rowid() id').fetchone()['id']
+                    con.execute("UPDATE sellers SET status='approved',store_id=?,reviewed_at=? WHERE id=?",(store_id,now_iso(),sid)); con.commit()
+                    return self.send_json({'ok':True,'auto_approved':True,'message':"Account created. You can log in now."})
                 if not smtp_configured(): return self.send_json({'ok':True,'message':"Account created. We will now review your ID. After approval you can log in."})
                 return self.send_json({'ok':True,'message':"Account created. First, open the confirmation link we just emailed to you. We only review ID applications from confirmed emails. After approval you can log in."})
             if path=='/api/seller/login':

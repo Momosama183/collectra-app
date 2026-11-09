@@ -138,7 +138,7 @@ CHALLENGE_MAX_AGE=1800
 NEED_LOGIN='Please log in to continue'
 REG_LOG={}   # ip -> recent buyer sign-up times
 ANON_LOG={}; ANON_DAY=[]   # anonymous card checks: per-visitor and all-visitors timestamps (only used when COLLECTRA_ANON_VERIFY=on)
-ANON_MAX_BYTES=12*1024*1024
+ANON_MAX_BYTES=int(os.getenv('COLLECTRA_ANON_MAX_MB','12'))*1024*1024
 def anon_over_limit(ip):
     """Free checks without login cost real AI money, so they are capped per visitor per hour and for everyone per day."""
     now=time.time(); per_hour=int(os.getenv('COLLECTRA_ANON_PER_HOUR','8')); per_day=int(os.getenv('COLLECTRA_ANON_PER_DAY','50'))
@@ -800,7 +800,7 @@ class Handler(BaseHTTPRequestHandler):
                     if os.getenv('COLLECTRA_ANON_VERIFY','off').lower()!='on': return self.send_json({'error':NEED_LOGIN},401)
                     anon_ip=self.client_ip(); why=anon_over_limit(anon_ip)
                     if why: return self.send_json({'error':why},429)
-                    if int(self.headers.get('Content-Length','0') or 0)>ANON_MAX_BYTES: return self.send_json({'error':'The photos are too large. Keep the two photos under 12 MB in total, or log in.'},413)
+                    if int(self.headers.get('Content-Length','0') or 0)>ANON_MAX_BYTES: return self.send_json({'error':'The photos are too large. Keep the two photos under '+str(ANON_MAX_BYTES//1024//1024)+' MB in total, or log in.'},413)
                 fields,files=parse_multipart(self)
                 required=('front','back'); optional=('edges','surface')  # edges/surface are optional extra photos
                 missing=[key for key in required if key not in files]
@@ -825,6 +825,12 @@ class Handler(BaseHTTPRequestHandler):
                     if p.exists(): refs.append(p)
                 if anon_ip: anon_count(anon_ip)
                 result=ai_call(AI.verify,AI_FALLBACKS['card'],saved['front'][0],saved['back'][0],saved['edges'][0] if 'edges' in saved else None,saved['surface'][0] if 'surface' in saved else None,category,card_name,refs)
+                if anon_ip and shutil.disk_usage(DATA).free<int(os.getenv('COLLECTRA_ANON_KEEP_MIN_FREE_MB','300'))*1024*1024:
+                    # disk nearly full: keep the verdict but not the photos, so the database never runs out of room
+                    for v in saved.values():
+                        try: v[0].unlink()
+                        except Exception: pass
+                    saved={k:(v[0],'') for k,v in saved.items()}
                 con.execute('''INSERT INTO verification_results(device_id,category,card_name,verdict,confidence,summary,details_json,front_url,back_url,edges_url,surface_url,provider,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                     (device,category,card_name,result['verdict'],result['confidence'],result['summary'],json.dumps(result['details']),saved['front'][1],saved['back'][1],saved['edges'][1] if 'edges' in saved else '',saved['surface'][1] if 'surface' in saved else '',result['provider'],now_iso()))
                 con.commit(); return self.send_json(result)

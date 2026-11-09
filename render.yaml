@@ -16,6 +16,8 @@ services:
         generateValue: true
       - key: COLLECTRA_DATA_DIR
         value: /var/data
+      - key: COLLECTRA_AUTO_APPROVE_SELLERS
+        value: "on"
       - key: COLLECTRA_WEB_AI
         value: "on"
       - key: COLLECTRA_WEB_AI_URL

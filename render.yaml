@@ -20,6 +20,12 @@ services:
         value: "on"
       - key: COLLECTRA_ANON_VERIFY
         value: "on"
+      - key: COLLECTRA_ANON_PER_HOUR
+        value: "100"
+      - key: COLLECTRA_ANON_PER_DAY
+        value: "1000"
+      - key: COLLECTRA_ANON_MAX_MB
+        value: "30"
       - key: COLLECTRA_WEB_AI
         value: "on"
       - key: COLLECTRA_WEB_AI_URL

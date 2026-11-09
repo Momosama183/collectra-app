@@ -18,6 +18,8 @@ services:
         value: /var/data
       - key: COLLECTRA_AUTO_APPROVE_SELLERS
         value: "on"
+      - key: COLLECTRA_ANON_VERIFY
+        value: "on"
       - key: COLLECTRA_WEB_AI
         value: "on"
       - key: COLLECTRA_WEB_AI_URL

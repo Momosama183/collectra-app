@@ -137,6 +137,17 @@ CHALLENGE_SECRET=os.getenv('COLLECTRA_SECRET') or secrets.token_hex(32)   # sign
 CHALLENGE_MAX_AGE=1800
 NEED_LOGIN='Please log in to continue'
 REG_LOG={}   # ip -> recent buyer sign-up times
+ANON_LOG={}; ANON_DAY=[]   # anonymous card checks: per-visitor and all-visitors timestamps (only used when COLLECTRA_ANON_VERIFY=on)
+ANON_MAX_BYTES=12*1024*1024
+def anon_over_limit(ip):
+    """Free checks without login cost real AI money, so they are capped per visitor per hour and for everyone per day."""
+    now=time.time(); per_hour=int(os.getenv('COLLECTRA_ANON_PER_HOUR','8')); per_day=int(os.getenv('COLLECTRA_ANON_PER_DAY','50'))
+    ANON_DAY[:]=[t for t in ANON_DAY if t>now-86400]; ANON_LOG[ip]=[t for t in ANON_LOG.get(ip,[]) if t>now-3600]
+    if len(ANON_LOG[ip])>=per_hour: return 'You have used the free checks for this hour. Log in to keep checking, or try again later.'
+    if len(ANON_DAY)>=per_day: return 'The free checks are full for today. Log in to check your card, or try again tomorrow.'
+    return None
+def anon_count(ip):
+    now=time.time(); ANON_LOG.setdefault(ip,[]).append(now); ANON_DAY.append(now)
 ADMIN_FAILS={}
 RESET_FAILS={}   # email -> list of request timestamps (limits reset emails to 3 per hour)
 
@@ -269,6 +280,10 @@ class Handler(BaseHTTPRequestHandler):
         length=int(self.headers.get('Content-Length','0') or 0)
         raw=self.rfile.read(length) if length else b'{}'
         return json.loads(raw.decode('utf-8') or '{}')
+    def client_ip(self):
+        """Real visitor address. Behind Render's proxy client_address is the proxy itself, so read X-Forwarded-For."""
+        xff=self.headers.get('X-Forwarded-For','').split(',')[0].strip()
+        return xff or self.client_address[0]
     def public_base(self):
         base=os.getenv('COLLECTRA_PUBLIC_URL','').rstrip('/')
         if base: return base
@@ -507,7 +522,7 @@ class Handler(BaseHTTPRequestHandler):
                 link=f"{self.public_base()}/#verify-email/{new_verify_token(con,kind,row['id'])}"; con.commit()
                 return self.send_json({'ok':True,'link':link})
             if path=='/api/buyer/register':
-                d=self.read_json(); ip=self.client_address[0]
+                d=self.read_json(); ip=self.client_ip()
                 recent=[t for t in REG_LOG.get(ip,[]) if t>time.time()-3600]
                 if len(recent)>=10: return self.send_json({'error':'Too many sign-ups from this network. Please try again later.'},429)
                 email=(d.get('email') or '').strip().lower(); pw=d.get('password') or ''; name=(d.get('full_name') or '').strip()[:80]
@@ -780,7 +795,12 @@ class Handler(BaseHTTPRequestHandler):
                     (st['id'],fields.get('title','Untitled'),fields.get('category','Other'),float(fields.get('price','0')),int(fields.get('stock','1')),fields.get('condition','Like New'),image_url,int(st['verified']),fields.get('description','')[:1200],now_iso()))
                 con.commit(); return self.send_json({'ok':True,'product_id':con.execute('SELECT last_insert_rowid() id').fetchone()['id']})
             if path=='/api/verify':
-                if not (self.buyer_verified_owner(con) or self.seller_auth(con)): return self.send_json({'error':NEED_LOGIN},401)
+                anon_ip=None
+                if not (self.buyer_verified_owner(con) or self.seller_auth(con)):
+                    if os.getenv('COLLECTRA_ANON_VERIFY','off').lower()!='on': return self.send_json({'error':NEED_LOGIN},401)
+                    anon_ip=self.client_ip(); why=anon_over_limit(anon_ip)
+                    if why: return self.send_json({'error':why},429)
+                    if int(self.headers.get('Content-Length','0') or 0)>ANON_MAX_BYTES: return self.send_json({'error':'The photos are too large. Keep the two photos under 12 MB in total, or log in.'},413)
                 fields,files=parse_multipart(self)
                 required=('front','back'); optional=('edges','surface')  # edges/surface are optional extra photos
                 missing=[key for key in required if key not in files]
@@ -803,6 +823,7 @@ class Handler(BaseHTTPRequestHandler):
                 for r in con.execute(query,params).fetchall():
                     p=REFERENCES/Path(r['image_url']).name
                     if p.exists(): refs.append(p)
+                if anon_ip: anon_count(anon_ip)
                 result=ai_call(AI.verify,AI_FALLBACKS['card'],saved['front'][0],saved['back'][0],saved['edges'][0] if 'edges' in saved else None,saved['surface'][0] if 'surface' in saved else None,category,card_name,refs)
                 con.execute('''INSERT INTO verification_results(device_id,category,card_name,verdict,confidence,summary,details_json,front_url,back_url,edges_url,surface_url,provider,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                     (device,category,card_name,result['verdict'],result['confidence'],result['summary'],json.dumps(result['details']),saved['front'][1],saved['back'][1],saved['edges'][1] if 'edges' in saved else '',saved['surface'][1] if 'surface' in saved else '',result['provider'],now_iso()))

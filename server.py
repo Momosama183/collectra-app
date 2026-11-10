@@ -641,6 +641,13 @@ class Handler(BaseHTTPRequestHandler):
                     LOGIN_FAILS[key]=rec
                     return self.send_json({'error':'Wrong email or password'},401)
                 LOGIN_FAILS.pop(key,None)
+                if sel['status']=='pending' and os.getenv('COLLECTRA_AUTO_APPROVE_SELLERS','off').lower()=='on':
+                    # Small private test: a seller who registered before auto-approve was switched on is let in at first login (same rules as a new sign-up: no Verified badge).
+                    shop=sel['shop_name'] or 'New seller'
+                    con.execute('INSERT INTO stores(name,description,logo_url,verified,category,token,created_at) VALUES(?,?,?,?,?,?,?)',(shop,'New Collectra seller','',0,'Mixed',secrets.token_urlsafe(24),now_iso()))
+                    store_id=con.execute('SELECT last_insert_rowid() id').fetchone()['id']
+                    con.execute("UPDATE sellers SET status='approved',store_id=?,reviewed_at=? WHERE id=?",(store_id,now_iso(),sel['id'])); con.commit()
+                    sel=con.execute('SELECT * FROM sellers WHERE id=?',(sel['id'],)).fetchone()
                 if sel['status']=='pending': return self.send_json({'error':('Please confirm your email first: open the link we emailed you. ' if not sel['email_verified'] else '')+'Your account is still being reviewed. We will approve it once your ID is checked.','status':'pending','email_verified':bool(sel['email_verified'])},403)
                 if sel['status']=='rejected': return self.send_json({'error':'Your seller application was not approved.'+((' Reason: '+sel['reject_reason']) if sel['reject_reason'] else ''),'status':'rejected'},403)
                 st=con.execute('SELECT * FROM stores WHERE id=?',(sel['store_id'],)).fetchone()

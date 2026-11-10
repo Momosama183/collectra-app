@@ -494,7 +494,8 @@ class Handler(BaseHTTPRequestHandler):
                     if rec[0]>=MAX_FAILS: rec=[0,time.time()+LOCK_SECONDS]
                     LOGIN_FAILS[key]=rec; return self.send_json({'error':'Wrong email or password'},401)
                 if not sel['email_verified']: check_code(con,'seller',sel['id'],(d.get('code') or ''))
-                return self.send_json({'ok':True,'message':'Email confirmed. Your application will now be reviewed.'})
+                st=con.execute('SELECT status FROM sellers WHERE id=?',(sel['id'],)).fetchone()['status']
+                return self.send_json({'ok':True,'message':('Email confirmed. You can log in now.' if st=='approved' or os.getenv('COLLECTRA_AUTO_APPROVE_SELLERS','off').lower()=='on' else 'Email confirmed. Your application will now be reviewed.')})
             if path=='/api/buyer/resend-verification':
                 b=self.buyer_auth(con)
                 if not b: return self.send_json({'error':NEED_LOGIN},401)
@@ -626,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                     con.execute('INSERT INTO stores(name,description,logo_url,verified,category,token,created_at) VALUES(?,?,?,?,?,?,?)',(shop,'New Collectra seller','',0,'Mixed',secrets.token_urlsafe(24),now_iso()))
                     store_id=con.execute('SELECT last_insert_rowid() id').fetchone()['id']
                     con.execute("UPDATE sellers SET status='approved',store_id=?,reviewed_at=? WHERE id=?",(store_id,now_iso(),sid)); con.commit()
-                    return self.send_json({'ok':True,'auto_approved':True,'message':"Account created. You can log in now."})
+                    return self.send_json({'ok':True,'auto_approved':True,'message':("Account created. We emailed you a 6-digit code. Confirm your email on the login page, then log in." if smtp_configured() else "Account created. You can log in now.")})
                 if not smtp_configured(): return self.send_json({'ok':True,'message':"Account created. We will now review your ID. After approval you can log in."})
                 return self.send_json({'ok':True,'message':"Account created. First, open the confirmation link we just emailed to you. We only review ID applications from confirmed emails. After approval you can log in."})
             if path=='/api/seller/login':
@@ -641,6 +642,9 @@ class Handler(BaseHTTPRequestHandler):
                     LOGIN_FAILS[key]=rec
                     return self.send_json({'error':'Wrong email or password'},401)
                 LOGIN_FAILS.pop(key,None)
+                if smtp_configured() and not sel['email_verified']:
+                    # Email is set up, so a seller must confirm it (6-digit code or link) before logging in.
+                    return self.send_json({'error':'Please confirm your email first: enter the 6-digit code we emailed you in the box below, or open the link in that email. Did not get it? Tap Resend.','status':'email_unverified','email_verified':False},403)
                 if sel['status']=='pending' and os.getenv('COLLECTRA_AUTO_APPROVE_SELLERS','off').lower()=='on':
                     # Small private test: a seller who registered before auto-approve was switched on is let in at first login (same rules as a new sign-up: no Verified badge).
                     shop=sel['shop_name'] or 'New seller'
